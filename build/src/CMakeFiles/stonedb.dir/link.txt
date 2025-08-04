@@ -1,0 +1,2 @@
+/usr/bin/ar qc libstonedb.a CMakeFiles/stonedb.dir/PageManager.cpp.o
+/usr/bin/ranlib libstonedb.a
