@@ -46,7 +46,7 @@ namespace sdb
 #ifdef O_CLOEXEC
         fl|=O_CLOEXEC;
 #endif
-        if(mk) fl|=O_CREAT;
+        if(mk){ fl|=O_CREAT; fl|=O_TRUNC; } // start fresh when mk==true
         fd_=::open(path_.c_str(),fl,0644);
         if(fd_==-1) oops("open");
 

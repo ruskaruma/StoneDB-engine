@@ -9,17 +9,17 @@ using namespace sdb;
 int main(){
     const char* db="test_db.sdb";
 
-    //created fresh
+    //create it fresh
     {
         PageManager pm;
         pm.open(db,true,4096);
         assert(pm.pagesz()==4096);
-        assert(pm.pagecount()==1); // header only
+        assert(pm.pagecount()==1); //header only
         pm.sync();
     }
 
     uint64_t a,b,c;
-    //alloc & write patterns
+    //alloc and write patterns
     {
         PageManager pm;
         pm.open(db,false);
@@ -33,7 +33,7 @@ int main(){
         pm.sync();
     }
 
-    //read back verify
+    //read back and verify
     {
         PageManager pm;
         pm.open(db,false);
@@ -62,6 +62,7 @@ int main(){
         assert(d==b);
         pm.sync();
     }
+
     std::cout<<"OK\n";
     return 0;
 }
