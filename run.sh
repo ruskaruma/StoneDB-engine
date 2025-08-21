@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-set -e  # exit if any command fails
+set -e  #to exit if any command fails
 
 ROOT="$(cd "$(dirname "$0")" && pwd)"
 BUILD_DIR="$ROOT/build"
@@ -7,11 +7,11 @@ BUILD_DIR="$ROOT/build"
 mkdir -p "$BUILD_DIR"
 cd "$BUILD_DIR"
 
-# Configure & build
+#to configure & build
 cmake .. -DCMAKE_BUILD_TYPE=Debug
 cmake --build . -j$(nproc)
 
-# Run tests
+#run tests
 if ctest --output-on-failure; then
     echo "All tests passed."
 else

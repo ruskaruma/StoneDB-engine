@@ -42,3 +42,6 @@ test_db.sdb
 .DS_Store
 *.swp
 *.tmp
+
+# IDE settings
+.vscode/

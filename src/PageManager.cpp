@@ -8,7 +8,7 @@
 #include <cerrno>
 #include <cstring>
 #include <stdexcept>
-#include <vector> // zero page buffer
+#include <vector> 
 
 namespace sdb
 {
@@ -46,7 +46,7 @@ namespace sdb
 #ifdef O_CLOEXEC
         fl|=O_CLOEXEC;
 #endif
-        if(mk){ fl|=O_CREAT; fl|=O_TRUNC; } // start fresh when mk==true
+        if(mk){ fl|=O_CREAT; fl|=O_TRUNC; } //start from fresh when mk==true
         fd_=::open(path_.c_str(),fl,0644);
         if(fd_==-1) oops("open");
 
@@ -162,4 +162,4 @@ namespace sdb
         if(::fsync(fd_)==-1) oops("fsync");
     }
 
-} // namespace sdb
+} //namespace sdb
