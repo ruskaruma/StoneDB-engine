@@ -1,4 +1,4 @@
-# ===== Generic compiler artifacts =====
+#Generic compiler artifacts
 *.d
 *.slo
 *.lo
@@ -22,7 +22,7 @@
 *.app
 *.dwo
 
-# ===== CMake build artifacts =====
+ CMake build artifacts
 /build/
 /CMakeFiles/
 /CMakeCache.txt
@@ -30,15 +30,15 @@
 /Testing/
 /Makefile
 
-# ===== Project binaries =====
+# Project binaries 
 /tests/test_pagemanager
 /libstonedb.a
 
-# ===== Database/test data =====
+#Database/test data
 test_db.sdb
 *.wal
 
-# ===== OS/editor =====
+#  OS/editor 
 .DS_Store
 *.swp
 *.tmp
