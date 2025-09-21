@@ -1,5 +1,5 @@
-#include "common.hpp"
-#include <cassert>
+#include"common.hpp"
+#include<cassert>
 
 int main()
 {

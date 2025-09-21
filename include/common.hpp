@@ -13,7 +13,7 @@ namespace stonedb
     using SlotId=uint16_t;
     static constexpr size_t PAGE_SIZE=4096;
     static constexpr size_t MAX_KEY_SIZE=255;
-    static constexpr size_t MAX_VALUE_SIZE=1024*1024; //1MB
+    static constexpr size_t MAX_VALUE_SIZE=1024*1024;
     static constexpr TransactionId INVALID_TXN_ID = 0;
     struct Record
     {
