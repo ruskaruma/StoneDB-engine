@@ -11,6 +11,7 @@ include_directories(include)
 set(SOURCES
     src/common.cpp
     src/storage.cpp
+    src/wal.cpp
 )
 
 # create library
@@ -27,8 +28,12 @@ target_link_libraries(test_common stonedb)
 add_executable(test_storage tests/test_storage.cpp)
 target_link_libraries(test_storage stonedb)
 
+add_executable(test_wal tests/test_wal.cpp)
+target_link_libraries(test_wal stonedb)
+
 # compiler flags
 target_compile_options(stonedb PRIVATE -Wall -Wextra -O2)
 target_compile_options(stone PRIVATE -Wall -Wextra -O2)
 target_compile_options(test_common PRIVATE -Wall -Wextra -O2)
 target_compile_options(test_storage PRIVATE -Wall -Wextra -O2)
+target_compile_options(test_wal PRIVATE -Wall -Wextra -O2)
