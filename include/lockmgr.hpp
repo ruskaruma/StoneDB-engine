@@ -7,22 +7,29 @@
 
 namespace stonedb
 {
-    struct LockRequest
-    {
+    struct LockRequest {
         TransactionId txnId;
         LockType type;
         bool granted;
         
         LockRequest(TransactionId id, LockType t) : txnId(id), type(t), granted(false) {}
     };
+    
     class LockManager
     {
     private:
         std::mutex lockMutex;
         std::condition_variable lockCondition;
+        
+        // key -> list of lock requests
         std::unordered_map<std::string, std::vector<LockRequest>> lockTable;
+        
+        // txn -> set of keys it holds locks on
         std::unordered_map<TransactionId, std::unordered_set<std::string>> txnLocks;
+        
+        // txn -> set of keys it's waiting for
         std::unordered_map<TransactionId, std::unordered_set<std::string>> txnWaits;
+        
         bool canGrantLock(const std::string& key, LockType requestedType);
         void grantLock(const std::string& key, TransactionId txnId, LockType type);
         void releaseLock(const std::string& key, TransactionId txnId);
@@ -35,6 +42,8 @@ namespace stonedb
         bool acquireLock(TransactionId txnId, const std::string& key, LockType type);
         bool releaseLock(TransactionId txnId, const std::string& key);
         bool releaseAllLocks(TransactionId txnId);
+        
+        // for debugging
         void printLockStatus();
     };
 }

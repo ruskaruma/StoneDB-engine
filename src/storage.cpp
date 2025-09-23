@@ -19,20 +19,20 @@ namespace stonedb
         dbPath=path;
         dbFile.open(path, std::ios::in | std::ios::out | std::ios::binary);
         
-        if(!dbFile.is_open()) {
+        if(!dbFile.is_open())
+        {
             //creating new file
             dbFile.open(path, std::ios::out | std::ios::binary);
-            if(!dbFile.is_open()) {
+            if(!dbFile.is_open())
+            {
                 logError("failed to create db file: " + path);
                 return false;
             }
-            
             //writing header
             char header[HEADER_SIZE]={0};
             dbFile.write(header, HEADER_SIZE);
             dbFile.flush();
             dbFile.close();
-            
             //reopen for read/write
             dbFile.open(path, std::ios::in | std::ios::out | std::ios::binary);
             if(!dbFile.is_open()) {
@@ -47,7 +47,8 @@ namespace stonedb
     }
     void StorageManager::close()
     {
-        if(dbOpen) {
+        if(dbOpen)
+        {
             flushAll();
             dbFile.close();
             pageCache.clear();
@@ -180,19 +181,17 @@ namespace stonedb
         if(!page) return false;
         
         size_t offset=0;
-        while(offset < PAGE_SIZE - RECORD_HEADER_SIZE)
-        {
+        while(offset < PAGE_SIZE - RECORD_HEADER_SIZE) {
             uint16_t keyLen, valueLen;
             memcpy(&keyLen, page->data.data() + offset, 2);
             memcpy(&valueLen, page->data.data() + offset + 2, 2);
-            if(keyLen==0) break;
+            if(keyLen == 0) break;
             std::string recordKey(reinterpret_cast<const char*>(page->data.data() + offset + 4), keyLen);
-            if(recordKey==key)
-            {
+            if(recordKey == key) {
                 value.assign(reinterpret_cast<const char*>(page->data.data() + offset + 4 + keyLen), valueLen);
                 return true;
             }
-            offset+=4+keyLen+valueLen;
+            offset += 4 + keyLen + valueLen;
         }
         return false;
     }
@@ -201,15 +200,13 @@ namespace stonedb
         auto page=getPage(0);
         if(!page) return false;   
         size_t offset=0;
-        while(offset < PAGE_SIZE - RECORD_HEADER_SIZE)
-        {
+        while(offset < PAGE_SIZE - RECORD_HEADER_SIZE) {
             uint16_t keyLen, valueLen;
             memcpy(&keyLen, page->data.data() + offset, 2);
             memcpy(&valueLen, page->data.data() + offset + 2, 2);
-            if(keyLen==0) break;
+            if(keyLen == 0) break;
             std::string recordKey(reinterpret_cast<const char*>(page->data.data() + offset + 4), keyLen);
-            if(recordKey==key)
-            {
+            if(recordKey == key) {
                 uint16_t zero=0;
                 memcpy(page->data.data() + offset, &zero, 2);
                 page->isDirty=true;
@@ -225,12 +222,11 @@ namespace stonedb
         auto page=getPage(0);
         if(!page) return records;   
         size_t offset=0;
-        while(offset < PAGE_SIZE - RECORD_HEADER_SIZE)
-        {
+        while(offset < PAGE_SIZE - RECORD_HEADER_SIZE) {
             uint16_t keyLen, valueLen;
             memcpy(&keyLen, page->data.data() + offset, 2);
             memcpy(&valueLen, page->data.data() + offset + 2, 2);
-            if(keyLen==0) break;
+            if(keyLen == 0) break;
             std::string key(reinterpret_cast<const char*>(page->data.data() + offset + 4), keyLen);
             std::string value(reinterpret_cast<const char*>(page->data.data() + offset + 4 + keyLen), valueLen);
             records.emplace_back(key, value);

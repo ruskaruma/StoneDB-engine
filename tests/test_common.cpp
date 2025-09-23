@@ -1,6 +1,5 @@
 #include"common.hpp"
 #include<cassert>
-
 int main()
 {
     stonedb::Record rec("test", "value");
