@@ -32,8 +32,6 @@ namespace stonedb
         {
             return walOpen;
         }
-        
-       //LOGGINGS
 
         bool logBeginTxn(TransactionId txnId);
         bool logCommitTxn(TransactionId txnId);
