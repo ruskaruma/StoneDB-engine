@@ -30,7 +30,6 @@ namespace stonedb
         }
         return true;
     }
-
     void LockManager::grantLock(const std::string& key, TransactionId txnId, LockType type)
     {
         auto& requests=lockTable[key];
