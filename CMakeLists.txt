@@ -13,6 +13,7 @@ set(SOURCES
     src/storage.cpp
     src/wal.cpp
     src/lockmgr.cpp
+    src/transaction.cpp
 )
 
 # create library
@@ -35,6 +36,9 @@ target_link_libraries(test_wal stonedb)
 add_executable(test_lockmgr tests/test_lockmgr.cpp)
 target_link_libraries(test_lockmgr stonedb)
 
+add_executable(test_transaction tests/test_transaction.cpp)
+target_link_libraries(test_transaction stonedb)
+
 # compiler flags
 target_compile_options(stonedb PRIVATE -Wall -Wextra -O2)
 target_compile_options(stone PRIVATE -Wall -Wextra -O2)
@@ -42,3 +46,4 @@ target_compile_options(test_common PRIVATE -Wall -Wextra -O2)
 target_compile_options(test_storage PRIVATE -Wall -Wextra -O2)
 target_compile_options(test_wal PRIVATE -Wall -Wextra -O2)
 target_compile_options(test_lockmgr PRIVATE -Wall -Wextra -O2)
+target_compile_options(test_transaction PRIVATE -Wall -Wextra -O2)
