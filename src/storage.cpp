@@ -28,9 +28,14 @@ namespace stonedb
                 logError("failed to create db file: " + path);
                 return false;
             }
-            //writing header
+            //writing header and initial page
             char header[HEADER_SIZE]={0};
             dbFile.write(header, HEADER_SIZE);
+            
+            // write initial page to ensure file is large enough
+            char initialPage[PAGE_SIZE]={0};
+            dbFile.write(initialPage, PAGE_SIZE);
+            
             dbFile.flush();
             dbFile.close();
             //reopen for read/write
@@ -39,6 +44,7 @@ namespace stonedb
                 logError("failed to reopen db file");
                 return false;
             }
+            log("reopened db file for read/write");
         }
         dbOpen=true;
         nextPageId=1;
@@ -58,18 +64,39 @@ namespace stonedb
     }
     bool StorageManager::writePageToDisk(PageId pageId, const std::vector<uint8_t>& data)
     {
-        if(!dbOpen) return false; 
+        if(!dbOpen) {
+            logError("database not open");
+            return false;
+        }
+        
+        // clear any error flags before seeking
+        dbFile.clear();
+        
         std::streampos pos=HEADER_SIZE + (pageId * PAGE_SIZE);
         dbFile.seekp(pos);
-        if(dbFile.fail()) return false;
+        if(dbFile.fail()) {
+            logError("failed to seek to position " + std::to_string(pos));
+            return false;
+        }
         dbFile.write(reinterpret_cast<const char*>(data.data()), PAGE_SIZE);
-        if(dbFile.fail()) return false;
+        if(dbFile.fail()) {
+            logError("failed to write page data");
+            return false;
+        }
         dbFile.flush();
+        if(dbFile.fail()) {
+            logError("failed to flush page data");
+            return false;
+        }
         return true;
     }
     bool StorageManager::readPageFromDisk(PageId pageId, std::vector<uint8_t>& data)
     {
         if(!dbOpen) return false;
+        
+        // clear any error flags before seeking
+        dbFile.clear();
+        
         std::streampos pos=HEADER_SIZE + (pageId * PAGE_SIZE);
         dbFile.seekg(pos);
         if(dbFile.fail()) return false;
@@ -127,8 +154,10 @@ namespace stonedb
         {
             if(pair.second->isDirty)
             {
+                log("flushing page " + std::to_string(pair.first));
                 if(!writePageToDisk(pair.first, pair.second->data))
                 {
+                    logError("failed to write page " + std::to_string(pair.first) + " to disk");
                     return false;
                 }
                 pair.second->isDirty=false;
@@ -148,8 +177,37 @@ namespace stonedb
         auto page=getPage(0);
         if(!page) return false;
         
-        //finding free space in page
+        //first check if record already exists and update it
         size_t offset=0;
+        while(offset < PAGE_SIZE - RECORD_HEADER_SIZE) {
+            uint16_t keyLen, valueLen;
+            memcpy(&keyLen, page->data.data() + offset, 2);
+            memcpy(&valueLen, page->data.data() + offset + 2, 2);
+            
+            if(keyLen == 0) break;
+            
+            std::string recordKey(reinterpret_cast<const char*>(page->data.data() + offset + 4), keyLen);
+            if(recordKey == key) {
+                // update existing record
+                if(valueLen >= value.size()) {
+                    // can fit in existing space
+                    memcpy(page->data.data() + offset + 2, &valueLen, 2);
+                    memcpy(page->data.data() + offset + 4 + keyLen, value.c_str(), value.size());
+                    page->isDirty=true;
+                    return true;
+                } else {
+                    // mark as deleted and add new record
+                    uint16_t zero=0;
+                    memcpy(page->data.data() + offset, &zero, 2);
+                    break;
+                }
+            }
+            
+            offset += 4 + keyLen + valueLen;
+        }
+        
+        //finding free space in page for new record
+        offset=0;
         while(offset < PAGE_SIZE - RECORD_HEADER_SIZE) {
             uint16_t keyLen, valueLen;
             memcpy(&keyLen, page->data.data() + offset, 2);
@@ -200,20 +258,24 @@ namespace stonedb
         auto page=getPage(0);
         if(!page) return false;   
         size_t offset=0;
+        log("searching for record to delete: " + key);
         while(offset < PAGE_SIZE - RECORD_HEADER_SIZE) {
             uint16_t keyLen, valueLen;
             memcpy(&keyLen, page->data.data() + offset, 2);
             memcpy(&valueLen, page->data.data() + offset + 2, 2);
             if(keyLen == 0) break;
             std::string recordKey(reinterpret_cast<const char*>(page->data.data() + offset + 4), keyLen);
+            log("found record: " + recordKey);
             if(recordKey == key) {
                 uint16_t zero=0;
                 memcpy(page->data.data() + offset, &zero, 2);
                 page->isDirty=true;
+                log("deleted record: " + key);
                 return true;
             }
             offset += 4 + keyLen + valueLen;
         }
+        logError("record not found for deletion: " + key);
         return false;
     }
     std::vector<Record> StorageManager::scanRecords()
