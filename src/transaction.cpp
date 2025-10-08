@@ -42,13 +42,12 @@ namespace stonedb
             return false;
         }
         
-        // log commit
+
         if(!wal->logCommitTxn(txnId)) {
             logError("failed to log transaction commit");
             return false;
         }
         
-        // release all locks
         releaseLocks(txnId);
         
         txn.state=TransactionState::COMMITTED;
@@ -92,21 +91,23 @@ namespace stonedb
     
     bool TransactionManager::putRecord(TransactionId txnId, const std::string& key, const std::string& value)
     {
-        std::lock_guard<std::mutex> lock(txnMutex);
-        
-        auto it=activeTxns.find(txnId);
-        if(it == activeTxns.end()) {
-            logError("transaction " + std::to_string(txnId) + " not found");
-            return false;
+        {
+            std::lock_guard<std::mutex> lock(txnMutex);
+            
+            auto it=activeTxns.find(txnId);
+            if(it == activeTxns.end()) {
+                logError("transaction " + std::to_string(txnId) + " not found");
+                return false;
+            }
+            
+            Transaction& txn=it->second;
+            if(txn.state != TransactionState::ACTIVE) {
+                logError("transaction " + std::to_string(txnId) + " not active");
+                return false;
+            }
         }
         
-        Transaction& txn=it->second;
-        if(txn.state != TransactionState::ACTIVE) {
-            logError("transaction " + std::to_string(txnId) + " not active");
-            return false;
-        }
-        
-        // acquire exclusive lock
+        // acquire exclusive lock (without holding txnMutex)
         if(!acquireLocks(txnId, key, true)) {
             logError("failed to acquire lock for " + key);
             return false;
@@ -124,28 +125,37 @@ namespace stonedb
             return false;
         }
         
-        txn.writeSet.insert(key);
+        {
+            std::lock_guard<std::mutex> lock(txnMutex);
+            auto it=activeTxns.find(txnId);
+            if(it != activeTxns.end()) {
+                it->second.writeSet.insert(key);
+            }
+        }
+        
         log("txn " + std::to_string(txnId) + " put " + key + " = " + value);
         return true;
     }
     
     bool TransactionManager::getRecord(TransactionId txnId, const std::string& key, std::string& value)
     {
-        std::lock_guard<std::mutex> lock(txnMutex);
-        
-        auto it=activeTxns.find(txnId);
-        if(it == activeTxns.end()) {
-            logError("transaction " + std::to_string(txnId) + " not found");
-            return false;
+        {
+            std::lock_guard<std::mutex> lock(txnMutex);
+            
+            auto it=activeTxns.find(txnId);
+            if(it == activeTxns.end()) {
+                logError("transaction " + std::to_string(txnId) + " not found");
+                return false;
+            }
+            
+            Transaction& txn=it->second;
+            if(txn.state != TransactionState::ACTIVE) {
+                logError("transaction " + std::to_string(txnId) + " not active");
+                return false;
+            }
         }
         
-        Transaction& txn=it->second;
-        if(txn.state != TransactionState::ACTIVE) {
-            logError("transaction " + std::to_string(txnId) + " not active");
-            return false;
-        }
-        
-        // acquire shared lock
+        // acquire shared lock (without holding txnMutex)
         if(!acquireLocks(txnId, key, false)) {
             logError("failed to acquire lock for " + key);
             return false;
@@ -154,7 +164,13 @@ namespace stonedb
         // perform operation
         bool found=storage->getRecord(key, value);
         if(found) {
-            txn.readSet.insert(key);
+            {
+                std::lock_guard<std::mutex> lock(txnMutex);
+                auto it=activeTxns.find(txnId);
+                if(it != activeTxns.end()) {
+                    it->second.readSet.insert(key);
+                }
+            }
             log("txn " + std::to_string(txnId) + " get " + key + " = " + value);
         } else {
             log("txn " + std::to_string(txnId) + " get " + key + " (not found)");
