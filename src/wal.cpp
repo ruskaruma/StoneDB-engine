@@ -110,6 +110,7 @@ namespace stonedb
     bool WALManager::writeLogEntry(const LogEntry& entry)
     {
         if(!walOpen) return false;
+        walFile.clear();
         std::vector<uint8_t> data;
         serializeEntry(entry, data);
         walFile.write(reinterpret_cast<const char*>(data.data()), data.size());
@@ -125,7 +126,6 @@ namespace stonedb
         activeTxns.insert(txnId);
         return true;
     }
-    
     bool WALManager::logCommitTxn(TransactionId txnId)
     {
         LogEntry entry(LogType::COMMIT_TXN, txnId);
@@ -164,10 +164,22 @@ namespace stonedb
     }
     bool WALManager::flush()
     {
-        if(!walOpen) return false;
+        if(!walOpen)
+        {
+            logError("WAL not open");
+            return false;
+        }
+        walFile.clear();
         walFile.flush();
-        if(walFile.fail()) return false;
+        if(walFile.fail()) {
+            logError("WAL flush failed");
+            return false;
+        }
         walFile.sync();
+        if(walFile.fail()) {
+            logError("WAL sync failed");
+            return false;
+        }
         return true;
     }
     std::vector<LogEntry> WALManager::replayLog()
