@@ -48,6 +48,12 @@ namespace stonedb
             return false;
         }
         
+        // flush storage to ensure durability
+        if(!storage->flushAll()) {
+            logError("failed to flush storage");
+            return false;
+        }
+        
         releaseLocks(txnId);
         
         txn.state=TransactionState::COMMITTED;
