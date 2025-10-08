@@ -39,6 +39,18 @@ target_link_libraries(test_lockmgr stonedb)
 add_executable(test_transaction tests/test_transaction.cpp)
 target_link_libraries(test_transaction stonedb)
 
+add_executable(test_recovery tests/test_recovery.cpp)
+target_link_libraries(test_recovery stonedb)
+
+add_executable(test_benchmark tests/test_benchmark.cpp)
+target_link_libraries(test_benchmark stonedb)
+
+add_executable(test_concurrent tests/test_concurrent.cpp)
+target_link_libraries(test_concurrent stonedb)
+
+add_executable(test_integration tests/test_integration.cpp)
+target_link_libraries(test_integration stonedb)
+
 # compiler flags
 target_compile_options(stonedb PRIVATE -Wall -Wextra -O2)
 target_compile_options(stone PRIVATE -Wall -Wextra -O2)
