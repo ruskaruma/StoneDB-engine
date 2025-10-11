@@ -1,6 +1,6 @@
 # StoneDB-engine
 
-A modular, ACID-compliant embedded database written in C++ as a personal side project to learn databases and possibly monetize it later.
+A modular, ACID-compliant embedded database written in C++ as a personal side project to learn databases.
 
 ## Features
 
