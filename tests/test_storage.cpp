@@ -3,6 +3,9 @@
 
 int main()
 {
+    // clean up old test file
+    std::remove("test_db.sdb");
+    
     stonedb::StorageManager storage;
     //testing basic operations
     assert(storage.open("test_db.sdb"));
