@@ -50,6 +50,7 @@ Commands:
 
 ### Example Session
 
+#### Basic Operations
 ```
 stonedb> put hello world
 OK
@@ -62,6 +63,44 @@ hello = world
 test = 123
 stonedb> quit
 Goodbye!
+```
+
+#### Updating Records
+```
+stonedb> put user alice
+OK
+stonedb> get user
+alice
+stonedb> put user bob
+OK
+stonedb> get user
+bob
+```
+
+#### Deleting Records
+```
+stonedb> put temp data
+OK
+stonedb> get temp
+data
+stonedb> del temp
+OK
+stonedb> get temp
+NOT FOUND
+```
+
+#### Scanning All Records
+```
+stonedb> put key1 value1
+OK
+stonedb> put key2 value2
+OK
+stonedb> put key3 value3
+OK
+stonedb> scan
+key1 = value1
+key2 = value2
+key3 = value3
 ```
 
 ## Testing
