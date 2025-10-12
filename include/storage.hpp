@@ -15,6 +15,8 @@ namespace stonedb
         std::mutex cacheMutex;
         PageId nextPageId;
         bool dbOpen;
+        std::unordered_map<std::string, PageId> keyToPage;
+        std::vector<PageId> freePages;
         
         static constexpr size_t HEADER_SIZE=64;
         static constexpr size_t RECORD_HEADER_SIZE=8;

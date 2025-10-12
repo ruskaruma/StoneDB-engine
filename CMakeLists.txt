@@ -51,6 +51,9 @@ target_link_libraries(test_concurrent stonedb)
 add_executable(test_integration tests/test_integration.cpp)
 target_link_libraries(test_integration stonedb)
 
+add_executable(test_multipage tests/test_multipage.cpp)
+target_link_libraries(test_multipage stonedb)
+
 # compiler flags
 target_compile_options(stonedb PRIVATE -Wall -Wextra -O2)
 target_compile_options(stone PRIVATE -Wall -Wextra -O2)

@@ -64,27 +64,30 @@ namespace stonedb
     }
     bool StorageManager::writePageToDisk(PageId pageId, const std::vector<uint8_t>& data)
     {
-        if(!dbOpen) {
+        if(!dbOpen)
+        {
             logError("database not open");
             return false;
         }
         
-        // clear any error flags before seeking
         dbFile.clear();
         
         std::streampos pos=HEADER_SIZE + (pageId * PAGE_SIZE);
         dbFile.seekp(pos);
-        if(dbFile.fail()) {
+        if(dbFile.fail())
+        {
             logError("failed to seek to position " + std::to_string(pos));
             return false;
         }
         dbFile.write(reinterpret_cast<const char*>(data.data()), PAGE_SIZE);
-        if(dbFile.fail()) {
+        if(dbFile.fail())
+        {
             logError("failed to write page data");
             return false;
         }
         dbFile.flush();
-        if(dbFile.fail()) {
+        if(dbFile.fail())
+        {
             logError("failed to flush page data");
             return false;
         }
@@ -93,8 +96,6 @@ namespace stonedb
     bool StorageManager::readPageFromDisk(PageId pageId, std::vector<uint8_t>& data)
     {
         if(!dbOpen) return false;
-        
-        // clear any error flags before seeking
         dbFile.clear();
         
         std::streampos pos=HEADER_SIZE + (pageId * PAGE_SIZE);
@@ -113,21 +114,18 @@ namespace stonedb
         std::lock_guard<std::mutex> lock(cacheMutex);
         
         auto it=pageCache.find(pageId);
-        if(it != pageCache.end()) {
+        if(it != pageCache.end())
+        {
             return it->second;
         }
-        
-        //loading from disk
         auto page=std::make_shared<Page>(pageId);
-        if(!readPageFromDisk(pageId, page->data)) {
-            //creating new page
+        if(!readPageFromDisk(pageId, page->data))
+        {
             page->data.assign(PAGE_SIZE, 0);
         }
-        
         pageCache[pageId]=page;
         return page;
     }
-    
     bool StorageManager::flushPage(PageId pageId)
     {
         std::lock_guard<std::mutex> lock(cacheMutex);
@@ -145,7 +143,6 @@ namespace stonedb
         }
         return true;
     }
-
     bool StorageManager::flushAll()
     {
         std::lock_guard<std::mutex> lock(cacheMutex);
@@ -165,7 +162,6 @@ namespace stonedb
         }
         return true;
     }
-    
     bool StorageManager::putRecord(const std::string& key, const std::string& value)
     {
         if(key.size() > MAX_KEY_SIZE || value.size() > MAX_VALUE_SIZE)
@@ -173,127 +169,242 @@ namespace stonedb
             return false;
         }
         
-        //simplified implementation, putting everything in page 0      
-        auto page=getPage(0);
-        if(!page) return false;
+        // check if key already exists and update it
+        auto keyPageIt=keyToPage.find(key);
+        if(keyPageIt != keyToPage.end())
+        {
+            PageId existingPageId=keyPageIt->second;
+            auto page=getPage(existingPageId);
+            if(!page) return false;
+            
+            size_t offset=0;
+            while(offset < PAGE_SIZE - RECORD_HEADER_SIZE)
+            {
+                uint16_t keyLen, valueLen;
+                memcpy(&keyLen, page->data.data() + offset, 2);
+                memcpy(&valueLen, page->data.data() + offset + 2, 2);
+                
+                if(keyLen == 0) break;
+                
+                std::string recordKey(reinterpret_cast<const char*>(page->data.data() + offset + 4), keyLen);
+                if(recordKey == key)
+                {
+                    // update in place if fits
+                    if(valueLen >= value.size())
+                    {
+                        uint16_t newValueLen=value.size();
+                        memcpy(page->data.data() + offset + 2, &newValueLen, 2);
+                        memcpy(page->data.data() + offset + 4 + keyLen, value.c_str(), value.size());
+                        page->isDirty=true;
+                        return true;
+                    }
+                    else
+                    {
+                        // mark old record as deleted
+                        uint16_t zero=0;
+                        memcpy(page->data.data() + offset, &zero, 2);
+                        page->isDirty=true;
+                        keyToPage.erase(keyPageIt);
+                        break;
+                    }
+                }
+                offset += 4 + keyLen + valueLen;
+            }
+        }
         
-        //first check if record already exists and update it
-        size_t offset=0;
-        while(offset < PAGE_SIZE - RECORD_HEADER_SIZE) {
-            uint16_t keyLen, valueLen;
-            memcpy(&keyLen, page->data.data() + offset, 2);
-            memcpy(&valueLen, page->data.data() + offset + 2, 2);
+        // try to insert in existing pages starting from page 0
+        for(PageId pageId=0; pageId<nextPageId; pageId++)
+        {
+            auto page=getPage(pageId);
+            if(!page) continue;
             
-            if(keyLen == 0) break;
-            
-            std::string recordKey(reinterpret_cast<const char*>(page->data.data() + offset + 4), keyLen);
-            if(recordKey == key) {
-                // update existing record
-                if(valueLen >= value.size()) {
-                    // can fit in existing space
-                    memcpy(page->data.data() + offset + 2, &valueLen, 2);
-                    memcpy(page->data.data() + offset + 4 + keyLen, value.c_str(), value.size());
-                    page->isDirty=true;
-                    return true;
-                } else {
-                    // mark as deleted and add new record
-                    uint16_t zero=0;
-                    memcpy(page->data.data() + offset, &zero, 2);
+            size_t offset=0;
+            while(offset < PAGE_SIZE - RECORD_HEADER_SIZE)
+            {
+                uint16_t keyLen, valueLen;
+                memcpy(&keyLen, page->data.data() + offset, 2);
+                memcpy(&valueLen, page->data.data() + offset + 2, 2);
+                
+                if(keyLen == 0)
+                {
+                    // found free space
+                    size_t needed=4 + key.size() + value.size();
+                    if(offset + needed <= PAGE_SIZE)
+                    {
+                        keyLen=key.size();
+                        valueLen=value.size();
+                        memcpy(page->data.data() + offset, &keyLen, 2);
+                        memcpy(page->data.data() + offset + 2, &valueLen, 2);
+                        memcpy(page->data.data() + offset + 4, key.c_str(), keyLen);
+                        memcpy(page->data.data() + offset + 4 + keyLen, value.c_str(), valueLen);
+                        
+                        page->isDirty=true;
+                        keyToPage[key]=pageId;
+                        return true;
+                    }
                     break;
                 }
+                offset += 4 + keyLen + valueLen;
             }
-            
-            offset += 4 + keyLen + valueLen;
         }
         
-        //finding free space in page for new record
-        offset=0;
-        while(offset < PAGE_SIZE - RECORD_HEADER_SIZE) {
-            uint16_t keyLen, valueLen;
-            memcpy(&keyLen, page->data.data() + offset, 2);
-            memcpy(&valueLen, page->data.data() + offset + 2, 2);
-            
-            if(keyLen == 0)
-            {          
-                keyLen=key.size();
-                valueLen=value.size();
-                memcpy(page->data.data() + offset, &keyLen, 2);
-                memcpy(page->data.data() + offset + 2, &valueLen, 2);
-                memcpy(page->data.data() + offset + 4, key.c_str(), keyLen);
-                memcpy(page->data.data() + offset + 4 + keyLen, value.c_str(), valueLen);
-                
-                page->isDirty=true;
-                return true;
-            }
-            
-            offset += 4 + keyLen + valueLen;
-        }
+        // no space in existing pages, allocate new page
+        PageId newPageId=allocateNewPage();
+        auto newPage=getPage(newPageId);
+        if(!newPage) return false;
         
-        logError("page full, need better allocation");
-        return false;
+        uint16_t keyLen=key.size();
+        uint16_t valueLen=value.size();
+        memcpy(newPage->data.data(), &keyLen, 2);
+        memcpy(newPage->data.data() + 2, &valueLen, 2);
+        memcpy(newPage->data.data() + 4, key.c_str(), keyLen);
+        memcpy(newPage->data.data() + 4 + keyLen, value.c_str(), valueLen);
+        
+        newPage->isDirty=true;
+        keyToPage[key]=newPageId;
+        log("allocated new page " + std::to_string(newPageId) + " for key " + key);
+        return true;
     }
     
     bool StorageManager::getRecord(const std::string& key, std::string& value)
     {
-        auto page=getPage(0);
-        if(!page) return false;
-        
-        size_t offset=0;
-        while(offset < PAGE_SIZE - RECORD_HEADER_SIZE) {
-            uint16_t keyLen, valueLen;
-            memcpy(&keyLen, page->data.data() + offset, 2);
-            memcpy(&valueLen, page->data.data() + offset + 2, 2);
-            if(keyLen == 0) break;
-            std::string recordKey(reinterpret_cast<const char*>(page->data.data() + offset + 4), keyLen);
-            if(recordKey == key) {
-                value.assign(reinterpret_cast<const char*>(page->data.data() + offset + 4 + keyLen), valueLen);
-                return true;
+        // check keyToPage map first for faster lookup
+        auto keyPageIt=keyToPage.find(key);
+        if(keyPageIt != keyToPage.end())
+        {
+            PageId pageId=keyPageIt->second;
+            auto page=getPage(pageId);
+            if(!page) return false;
+            
+            size_t offset=0;
+            while(offset < PAGE_SIZE - RECORD_HEADER_SIZE)
+            {
+                uint16_t keyLen, valueLen;
+                memcpy(&keyLen, page->data.data() + offset, 2);
+                memcpy(&valueLen, page->data.data() + offset + 2, 2);
+                if(keyLen == 0) break;
+                
+                std::string recordKey(reinterpret_cast<const char*>(page->data.data() + offset + 4), keyLen);
+                if(recordKey == key)
+                {
+                    value.assign(reinterpret_cast<const char*>(page->data.data() + offset + 4 + keyLen), valueLen);
+                    return true;
+                }
+                offset += 4 + keyLen + valueLen;
             }
-            offset += 4 + keyLen + valueLen;
+        }
+        
+        // fallback: search all pages
+        for(PageId pageId=0; pageId<nextPageId; pageId++)
+        {
+            auto page=getPage(pageId);
+            if(!page) continue;
+            
+            size_t offset=0;
+            while(offset < PAGE_SIZE - RECORD_HEADER_SIZE)
+            {
+                uint16_t keyLen, valueLen;
+                memcpy(&keyLen, page->data.data() + offset, 2);
+                memcpy(&valueLen, page->data.data() + offset + 2, 2);
+                if(keyLen == 0) break;
+                
+                std::string recordKey(reinterpret_cast<const char*>(page->data.data() + offset + 4), keyLen);
+                if(recordKey == key)
+                {
+                    value.assign(reinterpret_cast<const char*>(page->data.data() + offset + 4 + keyLen), valueLen);
+                    keyToPage[key]=pageId;
+                    return true;
+                }
+                offset += 4 + keyLen + valueLen;
+            }
         }
         return false;
     }
     bool StorageManager::deleteRecord(const std::string& key)
     {
-        auto page=getPage(0);
-        if(!page) return false;   
-        size_t offset=0;
-        log("searching for record to delete: " + key);
-        while(offset < PAGE_SIZE - RECORD_HEADER_SIZE) {
-            uint16_t keyLen, valueLen;
-            memcpy(&keyLen, page->data.data() + offset, 2);
-            memcpy(&valueLen, page->data.data() + offset + 2, 2);
-            if(keyLen == 0) break;
-            std::string recordKey(reinterpret_cast<const char*>(page->data.data() + offset + 4), keyLen);
-            log("found record: " + recordKey);
-            if(recordKey == key) {
-                uint16_t zero=0;
-                memcpy(page->data.data() + offset, &zero, 2);
-                page->isDirty=true;
-                log("deleted record: " + key);
-                return true;
-            }
-            offset += 4 + keyLen + valueLen;
+        // check keyToPage map first
+        auto keyPageIt=keyToPage.find(key);
+        PageId targetPageId=0;
+        
+        if(keyPageIt != keyToPage.end())
+        {
+            targetPageId=keyPageIt->second;
         }
+        
+        // search for record
+        for(PageId pageId=targetPageId; pageId<nextPageId; pageId++)
+        {
+            auto page=getPage(pageId);
+            if(!page) continue;
+            
+            size_t offset=0;
+            while(offset < PAGE_SIZE - RECORD_HEADER_SIZE)
+            {
+                uint16_t keyLen, valueLen;
+                memcpy(&keyLen, page->data.data() + offset, 2);
+                memcpy(&valueLen, page->data.data() + offset + 2, 2);
+                if(keyLen == 0) break;
+                
+                std::string recordKey(reinterpret_cast<const char*>(page->data.data() + offset + 4), keyLen);
+                if(recordKey == key)
+                {
+                    uint16_t zero=0;
+                    memcpy(page->data.data() + offset, &zero, 2);
+                    page->isDirty=true;
+                    keyToPage.erase(key);
+                    log("deleted record: " + key);
+                    return true;
+                }
+                offset += 4 + keyLen + valueLen;
+            }
+            
+            if(keyPageIt != keyToPage.end()) break;
+        }
+        
         logError("record not found for deletion: " + key);
         return false;
     }
     std::vector<Record> StorageManager::scanRecords()
     {
         std::vector<Record> records;
-        auto page=getPage(0);
-        if(!page) return records;   
-        size_t offset=0;
-        while(offset < PAGE_SIZE - RECORD_HEADER_SIZE) {
-            uint16_t keyLen, valueLen;
-            memcpy(&keyLen, page->data.data() + offset, 2);
-            memcpy(&valueLen, page->data.data() + offset + 2, 2);
-            if(keyLen == 0) break;
-            std::string key(reinterpret_cast<const char*>(page->data.data() + offset + 4), keyLen);
-            std::string value(reinterpret_cast<const char*>(page->data.data() + offset + 4 + keyLen), valueLen);
-            records.emplace_back(key, value);
-            offset += 4 + keyLen + valueLen;
+        
+        // scan all pages
+        for(PageId pageId=0; pageId<nextPageId; pageId++)
+        {
+            auto page=getPage(pageId);
+            if(!page) continue;
+            
+            size_t offset=0;
+            while(offset < PAGE_SIZE - RECORD_HEADER_SIZE)
+            {
+                uint16_t keyLen, valueLen;
+                memcpy(&keyLen, page->data.data() + offset, 2);
+                memcpy(&valueLen, page->data.data() + offset + 2, 2);
+                if(keyLen == 0) break;
+                
+                std::string key(reinterpret_cast<const char*>(page->data.data() + offset + 4), keyLen);
+                std::string value(reinterpret_cast<const char*>(page->data.data() + offset + 4 + keyLen), valueLen);
+                records.emplace_back(key, value);
+                offset += 4 + keyLen + valueLen;
+            }
         }
+        
         return records;
+    }
+    
+    PageId StorageManager::allocateNewPage()
+    {
+        if(!freePages.empty())
+        {
+            PageId pageId=freePages.back();
+            freePages.pop_back();
+            return pageId;
+        }
+        return nextPageId++;
+    }
+    
+    void StorageManager::deallocatePage(PageId pageId)
+    {
+        freePages.push_back(pageId);
     }
 }
