@@ -31,16 +31,18 @@ When `findFreeSpaceInPage` marks the old record as deleted and searches for free
 4. Fixed keyToPage mapping updates
 
 **Current Status:**
-Partially fixed. `getRecord` can now find records using the fast path (keyToPage), but `scanRecords` still fails to find records after an update moves a record to a new page. The scan shows "No records found" even though individual gets work correctly. This suggests the search logic in `scanRecords` may have an edge case when iterating through pages with deleted slots at offset 0.
+FIXED - All search limits removed from both `scanRecords` and `getRecord` fallback paths. Both methods now search the entire page when encountering deleted records with invalid valueLen. The valueLen preservation mechanism is verified to work correctly when writing/reading pages from disk.
 
-**Recent Fixes Applied:**
+**Fixes Applied:**
 - Improved deleted record skipping in `getRecord` fast path
 - Improved deleted record skipping in `open()` method when rebuilding keyToPage
-- Improved search logic in `scanRecords` to scan full page when encountering invalid deleted slots
+- Removed PAGE_SIZE/2 search limit in `scanRecords` - now searches entire page
+- Removed PAGE_SIZE/2 search limit in `getRecord` fallback - now matches scanRecords
 - All methods now use consistent search logic for finding records after deleted slots
+- Verified valueLen preservation works correctly through write/read cycles
 
-**Remaining Issue:**
-Scan still shows "No records found" after update that moves record to new page, even though `get` operations work correctly.
+**Result:**
+Database now correctly finds all records after updates that move records to new pages, as long as valueLen is preserved correctly. If valueLen is corrupted or zero, the full-page search ensures subsequent records are still found.
 
 ---
 
