@@ -1,4 +1,5 @@
 #include "wal.hpp"
+#include "storage.hpp"
 #include<chrono>
 #include<cstring>
 
@@ -13,7 +14,6 @@ namespace stonedb
             close();
         }
     }
-
     bool WALManager::open(const std::string& path)
     {
         walPath=path;
@@ -30,6 +30,13 @@ namespace stonedb
             walFile.write(header, WAL_HEADER_SIZE);
             walFile.flush();
             walFile.close();
+            
+            //fix bug #16: explicitly ensure closed before retry
+            if(walFile.is_open())
+            {
+                walFile.close();
+            }
+            
             walFile.open(path, std::ios::in | std::ios::out | std::ios::binary | std::ios::app);
             if(!walFile.is_open())
             {
@@ -171,12 +178,14 @@ namespace stonedb
         }
         walFile.clear();
         walFile.flush();
-        if(walFile.fail()) {
+        if(walFile.fail())
+        {
             logError("WAL flush failed");
             return false;
         }
         walFile.sync();
-        if(walFile.fail()) {
+        if(walFile.fail())
+        {
             logError("WAL sync failed");
             return false;
         }
@@ -197,6 +206,22 @@ namespace stonedb
             uint16_t keyLen, valueLen;
             memcpy(&keyLen, header + sizeof(LogType) + sizeof(TransactionId) + sizeof(uint64_t), sizeof(uint16_t));
             memcpy(&valueLen, header + sizeof(LogType) + sizeof(TransactionId) + sizeof(uint64_t) + sizeof(uint16_t), sizeof(uint16_t));
+
+            //fix bug #11: validate sizes before allocating to prevent DoS
+            if(keyLen > MAX_KEY_SIZE || valueLen > MAX_VALUE_SIZE)
+            {
+                logError("invalid keyLen or valueLen in WAL entry - possible corruption");
+                break;
+            }
+            
+            //validate reasonable limits to prevent huge allocations
+            const size_t MAX_WAL_KEY_SIZE=1024*1024;
+            const size_t MAX_WAL_VALUE_SIZE=10*1024*1024;
+            if(keyLen > MAX_WAL_KEY_SIZE || valueLen > MAX_WAL_VALUE_SIZE)
+            {
+                logError("WAL entry size exceeds maximum - possible corruption");
+                break;
+            }
 
             std::vector<char> keyData(keyLen);
             std::vector<char> valueData(valueLen);
@@ -222,14 +247,69 @@ namespace stonedb
             if(entry.type == LogType::COMMIT_TXN) committed.insert(entry.txnId);
         }
 
-        for(const auto& entry : entries) {
+        for(const auto& entry : entries)
+        {
             if(committed.count(entry.txnId) && (entry.type == LogType::PUT_RECORD || entry.type == LogType::DELETE_RECORD))
             {
                 committedEntries.push_back(entry);
             }
         }
-
         log("replayed " + std::to_string(committedEntries.size()) + " committed operations");
         return committedEntries;
+    }
+    
+    bool WALManager::checkpoint(std::shared_ptr<class StorageManager> storage)
+    {
+        if(!walOpen) return false;
+        
+        //flush all storage pages
+        if(storage)
+        {
+            storage->flushAll();
+        }
+        
+        //flush WAL
+        if(!flush())
+        {
+            return false;
+        }
+        
+        log("checkpoint completed");
+        return true;
+    }
+    
+    bool WALManager::truncateLog()
+    {
+        //fix bug #20: truncate WAL after checkpoint
+        if(!walOpen) return false;
+        
+        walFile.flush();
+        walFile.close();
+        
+        //truncate file to header size (remove all log entries)
+        walFile.open(walPath, std::ios::out | std::ios::binary | std::ios::trunc);
+        if(!walFile.is_open())
+        {
+            logError("failed to truncate WAL file");
+            return false;
+        }
+        
+        char header[WAL_HEADER_SIZE]={0};
+        walFile.write(header, WAL_HEADER_SIZE);
+        walFile.flush();
+        walFile.close();
+        
+        //reopen in append mode
+        walFile.open(walPath, std::ios::in | std::ios::out | std::ios::binary | std::ios::app);
+        if(!walFile.is_open())
+        {
+            logError("failed to reopen WAL after truncation");
+            return false;
+        }
+        
+        committedTxns.clear();
+        activeTxns.clear();
+        log("WAL truncated");
+        return true;
     }
 }
