@@ -142,7 +142,7 @@ namespace stonedb
         }
         else
         {
-            nextPageId=1;
+        nextPageId=1;
         }
         
         log("opened db: " + path);
@@ -352,12 +352,12 @@ namespace stonedb
             auto page=getPageUnlocked(pageId);
             if(page)
             {
-                size_t offset=0;
+        size_t offset=0;
                 while(offset < PAGE_SIZE - RECORD_HEADER_SIZE)
                 {
-                    uint16_t keyLen, valueLen;
-                    memcpy(&keyLen, page->data.data() + offset, 2);
-                    memcpy(&valueLen, page->data.data() + offset + 2, 2);
+            uint16_t keyLen, valueLen;
+            memcpy(&keyLen, page->data.data() + offset, 2);
+            memcpy(&valueLen, page->data.data() + offset + 2, 2);
                     
                     //skip deleted records - use same robust logic as scanRecords
                     if(keyLen == 0)
@@ -385,13 +385,13 @@ namespace stonedb
                                 foundNext=true;
                                 break;
                             }
-                            if(testKeyLen == 0 && testValueLen > 0 && testValueLen < MAX_VALUE_SIZE)
+                            if(testKeyLen == 0 && testValueLen > 0 && testValueLen < MAX_VALUE_SIZE &&
+                               searchOffset + 4 + testValueLen < PAGE_SIZE)
                             {
                                 searchOffset += 4 + testValueLen;
                                 continue;
                             }
                             searchOffset += 4;
-                            if(searchOffset > offset + PAGE_SIZE / 2) break;
                         }
                         if(!foundNext) break;
                         continue;
@@ -406,11 +406,11 @@ namespace stonedb
                     }
                     
                     //safe to read
-                    std::string recordKey(reinterpret_cast<const char*>(page->data.data() + offset + 4), keyLen);
+            std::string recordKey(reinterpret_cast<const char*>(page->data.data() + offset + 4), keyLen);
                     if(recordKey == key)
                     {
-                        value.assign(reinterpret_cast<const char*>(page->data.data() + offset + 4 + keyLen), valueLen);
-                        return true;
+                value.assign(reinterpret_cast<const char*>(page->data.data() + offset + 4 + keyLen), valueLen);
+                return true;
                     }
                     
                     offset += 4 + keyLen + valueLen;
@@ -439,11 +439,10 @@ namespace stonedb
                         offset += 4 + valueLen;
                         continue;
                     }
-                    //invalid deleted slot - try to find next valid record
-                    //search ahead for valid record headers
+                    //invalid deleted slot - search entire page for next valid record
                     size_t searchOffset=offset + 4;
                     bool foundNext=false;
-                    for(; searchOffset < PAGE_SIZE - RECORD_HEADER_SIZE; searchOffset += 4)
+                    while(searchOffset < PAGE_SIZE - RECORD_HEADER_SIZE)
                     {
                         if(searchOffset + 4 > PAGE_SIZE) break;
                         uint16_t testKeyLen, testValueLen;
@@ -459,11 +458,13 @@ namespace stonedb
                             break;
                         }
                         //skip valid deleted records in search
-                        if(testKeyLen == 0 && testValueLen > 0 && testValueLen < MAX_VALUE_SIZE)
+                        if(testKeyLen == 0 && testValueLen > 0 && testValueLen < MAX_VALUE_SIZE &&
+                           searchOffset + 4 + testValueLen < PAGE_SIZE)
                         {
-                            searchOffset += testValueLen - 4; //adjust for loop increment
+                            searchOffset += 4 + testValueLen;
                             continue;
                         }
+                        searchOffset += 4;
                     }
                     if(!foundNext) break; //no more valid records on this page
                     continue;
@@ -480,14 +481,14 @@ namespace stonedb
                 //safe to read
                 std::string recordKey(reinterpret_cast<const char*>(page->data.data() + offset + 4), keyLen);
                 if(recordKey == key)
-                {
-                    value.assign(reinterpret_cast<const char*>(page->data.data() + offset + 4 + keyLen), valueLen);
-                    //update mapping for future lookups
-                    keyToPage[key]=pageId;
-                    return true;
-                }
+                    {
+                        value.assign(reinterpret_cast<const char*>(page->data.data() + offset + 4 + keyLen), valueLen);
+                        //update mapping for future lookups
+                        keyToPage[key]=pageId;
+                        return true;
+                    }
                 
-                offset += 4 + keyLen + valueLen;
+            offset += 4 + keyLen + valueLen;
             }
         }
         
@@ -538,13 +539,13 @@ namespace stonedb
                                 foundNext=true;
                                 break;
                             }
-                            if(testKeyLen == 0 && testValueLen > 0 && testValueLen < MAX_VALUE_SIZE)
+                            if(testKeyLen == 0 && testValueLen > 0 && testValueLen < MAX_VALUE_SIZE &&
+                               testValueLen < MAX_VALUE_SIZE && searchOffset + 4 + testValueLen < PAGE_SIZE)
                             {
                                 searchOffset += 4 + testValueLen;
                                 continue;
                             }
                             searchOffset += 4;
-                            if(searchOffset > offset + PAGE_SIZE / 2) break;
                         }
                         if(!foundNext) break;
                         continue;
@@ -595,11 +596,10 @@ namespace stonedb
                         offset += 4 + valueLen;
                         continue;
                     }
-                    //invalid deleted slot - try to find next valid record
-                    //search ahead for valid record headers
+                    //invalid deleted slot - search entire page for next valid record
                     size_t searchOffset=offset + 4;
                     bool foundNext=false;
-                    for(; searchOffset < PAGE_SIZE - RECORD_HEADER_SIZE; searchOffset += 4)
+                    while(searchOffset < PAGE_SIZE - RECORD_HEADER_SIZE)
                     {
                         if(searchOffset + 4 > PAGE_SIZE) break;
                         uint16_t testKeyLen, testValueLen;
@@ -615,11 +615,13 @@ namespace stonedb
                             break;
                         }
                         //skip valid deleted records in search
-                        if(testKeyLen == 0 && testValueLen > 0 && testValueLen < MAX_VALUE_SIZE)
+                        if(testKeyLen == 0 && testValueLen > 0 && testValueLen < MAX_VALUE_SIZE &&
+                           searchOffset + 4 + testValueLen < PAGE_SIZE)
                         {
-                            searchOffset += testValueLen - 4; //adjust for loop increment
+                            searchOffset += 4 + testValueLen;
                             continue;
                         }
+                        searchOffset += 4;
                     }
                     if(!foundNext) break; //no more valid records on this page
                     continue;
@@ -730,7 +732,7 @@ namespace stonedb
     bool StorageManager::findFreeSpaceInPage(PageId pageId, const std::string& key, const std::string& value, size_t requiredSize)
     {
         auto page=getPageUnlocked(pageId);
-        if(!page) return false;
+        if(!page) return false;   
         
         //check if record exists in this page
         size_t offset=0;
@@ -776,8 +778,8 @@ namespace stonedb
                 {
                     //mark old record as deleted (keyLen=0), preserve valueLen for scan
                     //will find new space for larger value
-                    uint16_t zero=0;
-                    memcpy(page->data.data() + offset, &zero, 2);
+                uint16_t zero=0;
+                memcpy(page->data.data() + offset, &zero, 2);
                     page->isDirty=true;
                     //break to search for free space
                     break;
@@ -819,8 +821,8 @@ namespace stonedb
                     memcpy(page->data.data() + offset + 2, &valueLen, 2);
                     memcpy(page->data.data() + offset + 4, key.c_str(), keyLen);
                     memcpy(page->data.data() + offset + 4 + keyLen, value.c_str(), valueLen);
-                    page->isDirty=true;
-                    return true;
+                page->isDirty=true;
+                return true;
                 }
                 
                 //slot too small, skip it
@@ -904,12 +906,12 @@ namespace stonedb
             auto page=getPageUnlocked(pageId);
             if(!page) continue;
             
-            size_t offset=0;
+        size_t offset=0;
             while(offset < PAGE_SIZE - RECORD_HEADER_SIZE)
             {
-                uint16_t keyLen, valueLen;
-                memcpy(&keyLen, page->data.data() + offset, 2);
-                memcpy(&valueLen, page->data.data() + offset + 2, 2);
+            uint16_t keyLen, valueLen;
+            memcpy(&keyLen, page->data.data() + offset, 2);
+            memcpy(&valueLen, page->data.data() + offset + 2, 2);
                 
                 //skip deleted records (keyLen == 0)
                 if(keyLen == 0)
@@ -976,11 +978,11 @@ namespace stonedb
                 }
                 
                 //safe to read - bounds verified
-                std::string key(reinterpret_cast<const char*>(page->data.data() + offset + 4), keyLen);
-                std::string value(reinterpret_cast<const char*>(page->data.data() + offset + 4 + keyLen), valueLen);
-                records.emplace_back(key, value);
+            std::string key(reinterpret_cast<const char*>(page->data.data() + offset + 4), keyLen);
+            std::string value(reinterpret_cast<const char*>(page->data.data() + offset + 4 + keyLen), valueLen);
+            records.emplace_back(key, value);
                 
-                offset += 4 + keyLen + valueLen;
+            offset += 4 + keyLen + valueLen;
             }
         }
         
