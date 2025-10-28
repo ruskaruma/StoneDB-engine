@@ -31,7 +31,16 @@ When `findFreeSpaceInPage` marks the old record as deleted and searches for free
 4. Fixed keyToPage mapping updates
 
 **Current Status:**
-Still failing. The scan can find the updated record on the new page, but cannot find remaining records on the original page after a deleted slot.
+Partially fixed. `getRecord` can now find records using the fast path (keyToPage), but `scanRecords` still fails to find records after an update moves a record to a new page. The scan shows "No records found" even though individual gets work correctly. This suggests the search logic in `scanRecords` may have an edge case when iterating through pages with deleted slots at offset 0.
+
+**Recent Fixes Applied:**
+- Improved deleted record skipping in `getRecord` fast path
+- Improved deleted record skipping in `open()` method when rebuilding keyToPage
+- Improved search logic in `scanRecords` to scan full page when encountering invalid deleted slots
+- All methods now use consistent search logic for finding records after deleted slots
+
+**Remaining Issue:**
+Scan still shows "No records found" after update that moves record to new page, even though `get` operations work correctly.
 
 ---
 
