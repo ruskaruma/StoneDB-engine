@@ -915,17 +915,16 @@ namespace stonedb
                 if(keyLen == 0)
                 {
                     //deleted record - skip using valueLen to preserve record boundaries
-                    //valueLen should be preserved from original record when deleted
                     if(valueLen > 0 && valueLen < MAX_VALUE_SIZE && offset + 4 + valueLen < PAGE_SIZE)
                     {
                         offset += 4 + valueLen;
                         continue;
                     }
-                    //if valueLen is invalid, try to find next valid record by scanning ahead
-                    //need to scan carefully to find where next record actually starts
+                    
+                    //valueLen is invalid (0 or corrupted) - need to find where next record actually starts
+                    //search from current position to end of page, incrementing carefully
                     size_t searchOffset=offset + 4;
                     bool foundNext=false;
-                    //try incremental search: first check 4-byte aligned positions, then byte-by-byte if needed
                     while(searchOffset < PAGE_SIZE - RECORD_HEADER_SIZE)
                     {
                         if(searchOffset + 4 > PAGE_SIZE) break;
@@ -934,18 +933,17 @@ namespace stonedb
                         memcpy(&testKeyLen, page->data.data() + searchOffset, 2);
                         memcpy(&testValueLen, page->data.data() + searchOffset + 2, 2);
                         
-                        //found a valid record header
+                        //found a valid record header - verify bounds before accepting
                         if(testKeyLen > 0 && testKeyLen <= MAX_KEY_SIZE && 
                            testValueLen > 0 && testValueLen <= MAX_VALUE_SIZE &&
                            searchOffset + 4 + testKeyLen + testValueLen <= PAGE_SIZE)
                         {
-                            //verify it's actually valid by checking if key/value are readable
                             offset=searchOffset;
                             foundNext=true;
                             break;
                         }
                         
-                        //found another deleted record with valid valueLen - skip it
+                        //found another deleted record with valid valueLen - skip it properly
                         if(testKeyLen == 0 && testValueLen > 0 && testValueLen < MAX_VALUE_SIZE && 
                            searchOffset + 4 + testValueLen < PAGE_SIZE)
                         {
@@ -953,13 +951,13 @@ namespace stonedb
                             continue;
                         }
                         
-                        //increment by 4 for next potential record header (record headers are 4-byte aligned)
+                        //invalid header - try next 4-byte aligned position
                         searchOffset += 4;
-                        
-                        //safety: don't search forever
-                        if(searchOffset > offset + PAGE_SIZE / 2) break;
                     }
-                    if(!foundNext) break; //no more valid records on this page, move to next page
+                    
+                    //if we didn't find next valid record, this page scan is done
+                    if(!foundNext) break;
+                    //found one - continue with the found offset
                     continue;
                 }
                 
