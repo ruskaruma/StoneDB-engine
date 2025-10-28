@@ -283,6 +283,8 @@ namespace stonedb
             PageId pageId=it->second;
             if(findFreeSpaceInPage(pageId, key, value, requiredSize))
             {
+                //ensure keyToPage is up to date (may have moved within page)
+                keyToPage[key]=pageId;
                 return true;
             }
             //existing record too large, will delete and create new
@@ -451,6 +453,7 @@ namespace stonedb
                     std::string recordKey(reinterpret_cast<const char*>(page->data.data() + offset + 4), keyLen);
                     if(recordKey == key)
                     {
+                        //mark as deleted (keyLen=0) but preserve valueLen so scan can skip correctly
                         uint16_t zero=0;
                         memcpy(page->data.data() + offset, &zero, 2);
                         page->isDirty=true;
@@ -636,10 +639,12 @@ namespace stonedb
                 }
                 else
                 {
-                    //mark as deleted, will find new space
+                    //mark old record as deleted (keyLen=0), preserve valueLen for scan
+                    //will find new space for larger value
                     uint16_t zero=0;
                     memcpy(page->data.data() + offset, &zero, 2);
                     page->isDirty=true;
+                    //break to search for free space
                     break;
                 }
             }
@@ -647,8 +652,13 @@ namespace stonedb
             offset += 4 + keyLen + valueLen;
         }
         
-        //find free space for new record
+        //find free space for new record or record that was marked deleted above
+        //start from beginning to find first suitable deleted slot or end of records
         offset=0;
+        size_t bestOffset=0;
+        size_t bestSize=0;
+        bool foundDeletedSlot=false;
+        
         while(offset < PAGE_SIZE - RECORD_HEADER_SIZE)
         {
             uint16_t keyLen, valueLen;
@@ -657,15 +667,17 @@ namespace stonedb
             
             if(keyLen == 0)
             {
-                size_t availableSpace=PAGE_SIZE - offset - RECORD_HEADER_SIZE;
-                if(availableSpace >= requiredSize)
+                //deleted slot - can only reuse if slot size fits exactly or is larger
+                //must NOT overwrite subsequent records
+                size_t slotSize=valueLen > 0 && valueLen < MAX_VALUE_SIZE ? valueLen : 0;
+                
+                //calculate size of this deleted slot
+                size_t slotTotalSize=4 + slotSize;
+                
+                //can only reuse if the slot itself is large enough (don't overwrite next record)
+                if(slotTotalSize >= requiredSize)
                 {
-                    //validate bounds before writing
-                    if(offset + 4 + key.size() + value.size() > PAGE_SIZE)
-                    {
-                        break;
-                    }
-                    
+                    //reuse this deleted slot
                     keyLen=key.size();
                     valueLen=value.size();
                     memcpy(page->data.data() + offset, &keyLen, 2);
@@ -675,10 +687,56 @@ namespace stonedb
                     page->isDirty=true;
                     return true;
                 }
+                
+                //slot too small, skip it
+                if(slotSize > 0 && slotSize < MAX_VALUE_SIZE && offset + 4 + slotSize < PAGE_SIZE)
+                {
+                    offset += 4 + slotSize;
+                    continue;
+                }
+                else
+                {
+                    //invalid slot, skip to next potential record
+                    offset += 4;
+                    continue;
+                }
+            }
+            
+            //validate bounds
+            if(offset + 4 > PAGE_SIZE || 
+               offset + 4 + keyLen > PAGE_SIZE ||
+               offset + 4 + keyLen + valueLen > PAGE_SIZE)
+            {
                 break;
             }
             
             offset += 4 + keyLen + valueLen;
+        }
+        
+        //if we reached here, check if we can append at end of valid records
+        //only append if offset is past all existing records (not in middle of page)
+        if(offset < PAGE_SIZE - RECORD_HEADER_SIZE && offset + requiredSize <= PAGE_SIZE)
+        {
+            //double-check that this is truly the end (next 4 bytes should be zeros or invalid)
+            if(offset + 4 <= PAGE_SIZE)
+            {
+                uint16_t nextKeyLen, nextValueLen;
+                memcpy(&nextKeyLen, page->data.data() + offset, 2);
+                memcpy(&nextValueLen, page->data.data() + offset + 2, 2);
+                
+                //if next slot is empty/deleted, we can append here
+                if(nextKeyLen == 0 && nextValueLen == 0)
+                {
+                    uint16_t keyLen=key.size();
+                    uint16_t valueLen=value.size();
+                    memcpy(page->data.data() + offset, &keyLen, 2);
+                    memcpy(page->data.data() + offset + 2, &valueLen, 2);
+                    memcpy(page->data.data() + offset + 4, key.c_str(), keyLen);
+                    memcpy(page->data.data() + offset + 4 + keyLen, value.c_str(), valueLen);
+                    page->isDirty=true;
+                    return true;
+                }
+            }
         }
         
         return false;

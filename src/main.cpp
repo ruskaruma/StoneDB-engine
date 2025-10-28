@@ -485,13 +485,16 @@ int main(int argc, char* argv[])
                         else if(json[pos] == '"')
                         {
                             pos++;
-                            if(pos < json.size() && (json[pos] == ',' || json[pos] == '}'))
+                            //skip whitespace after closing quote
+                            while(pos < json.size() && (json[pos] == ' ' || json[pos] == '\t' || json[pos] == '\n' || json[pos] == '\r'))
+                                pos++;
+                            if(pos < json.size() && (json[pos] == ',' || json[pos] == '}' || json[pos] == ']'))
                             {
                                 break;
                             }
                             value += '"';
                         }
-                        else if(json[pos] == ',' || json[pos] == '}')
+                        else if(json[pos] == ',' || json[pos] == '}' || json[pos] == ']')
                         {
                             break;
                         }
