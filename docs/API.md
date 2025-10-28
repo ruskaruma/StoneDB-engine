@@ -42,7 +42,7 @@ Stores a key-value pair in the database.
 - **Example**:
 ```cpp
 if(storage->putRecord("name", "Alice")) {
-    // success
+    
 }
 ```
 

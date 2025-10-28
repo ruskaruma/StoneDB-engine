@@ -691,13 +691,30 @@ namespace stonedb
                 //slot too small, skip it
                 if(slotSize > 0 && slotSize < MAX_VALUE_SIZE && offset + 4 + slotSize < PAGE_SIZE)
                 {
-                    offset += 4 + slotSize;
+                    size_t newOffset=offset + 4 + slotSize;
+                    if(newOffset <= offset) break; //prevent infinite loop
+                    offset=newOffset;
                     continue;
                 }
                 else
                 {
-                    //invalid slot, skip to next potential record
-                    offset += 4;
+                    //invalid slot, try to find next valid record by looking for non-zero keyLen
+                    size_t searchOffset=offset + 4;
+                    bool foundNext=false;
+                    while(searchOffset < PAGE_SIZE - 4)
+                    {
+                        uint16_t testKeyLen;
+                        memcpy(&testKeyLen, page->data.data() + searchOffset, 2);
+                        if(testKeyLen > 0 && testKeyLen <= MAX_KEY_SIZE)
+                        {
+                            offset=searchOffset;
+                            foundNext=true;
+                            break;
+                        }
+                        searchOffset += 4;
+                        if(searchOffset > offset + 100) break; //safety limit
+                    }
+                    if(!foundNext) break; //no more records
                     continue;
                 }
             }
