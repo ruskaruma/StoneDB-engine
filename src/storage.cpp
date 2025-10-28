@@ -786,9 +786,38 @@ namespace stonedb
                         offset += 4 + valueLen;
                         continue;
                     }
-                    //if valueLen is 0 or invalid, this slot is free - scan is done for this page
-                    //all subsequent offsets should also be empty/deleted
-                    break;
+                    //if valueLen is invalid, try to find next valid record
+                    //scan through rest of page looking for valid record headers
+                    size_t searchStart=offset + 4;
+                    bool foundNext=false;
+                    //scan up to end of page, incrementing by 4 (record header alignment)
+                    for(size_t searchOffset=searchStart; searchOffset < PAGE_SIZE - RECORD_HEADER_SIZE; searchOffset += 4)
+                    {
+                        if(searchOffset + 4 > PAGE_SIZE) break;
+                        
+                        uint16_t testKeyLen, testValueLen;
+                        memcpy(&testKeyLen, page->data.data() + searchOffset, 2);
+                        memcpy(&testValueLen, page->data.data() + searchOffset + 2, 2);
+                        
+                        //found a valid record header
+                        if(testKeyLen > 0 && testKeyLen <= MAX_KEY_SIZE && 
+                           testValueLen > 0 && testValueLen <= MAX_VALUE_SIZE &&
+                           searchOffset + 4 + testKeyLen + testValueLen <= PAGE_SIZE)
+                        {
+                            offset=searchOffset;
+                            foundNext=true;
+                            break;
+                        }
+                        //found another deleted record with valid valueLen - skip it properly
+                        if(testKeyLen == 0 && testValueLen > 0 && testValueLen < MAX_VALUE_SIZE)
+                        {
+                            searchOffset += testValueLen; //skip this deleted record's value
+                            searchOffset -= 4; //will be incremented by loop, so subtract
+                            continue;
+                        }
+                    }
+                    if(!foundNext) break; //no more valid records found
+                    continue;
                 }
                 
                 //validate record size and bounds BEFORE reading
