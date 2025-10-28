@@ -13,11 +13,17 @@ namespace stonedb
     {
         std::lock_guard<std::mutex> lock(txnMutex);
         
+        //fix bug #19: handle transaction ID wraparound
         TransactionId txnId=nextTxnId++;
-        activeTxns.emplace(txnId, Transaction(txnId));
+        if(txnId == INVALID_TXN_ID)
+        {
+            //wrapped around - skip INVALID_TXN_ID and continue
+            txnId=nextTxnId++;
+        }
         
-        // log transaction begin
-        if(!wal->logBeginTxn(txnId)) {
+        activeTxns.emplace(txnId, Transaction(txnId));
+        if(!wal->logBeginTxn(txnId))
+        {
             logError("failed to log transaction begin");
             return INVALID_TXN_ID;
         }
@@ -31,70 +37,66 @@ namespace stonedb
         std::lock_guard<std::mutex> lock(txnMutex);
         
         auto it=activeTxns.find(txnId);
-        if(it == activeTxns.end()) {
+        if(it == activeTxns.end())
+        {
             logError("transaction " + std::to_string(txnId) + " not found");
             return false;
         }
         
         Transaction& txn=it->second;
-        if(txn.state != TransactionState::ACTIVE) {
+        if(txn.state != TransactionState::ACTIVE)
+        {
             logError("transaction " + std::to_string(txnId) + " not active");
             return false;
         }
         
 
-        if(!wal->logCommitTxn(txnId)) {
+        if(!wal->logCommitTxn(txnId))
+        {
             logError("failed to log transaction commit");
             return false;
         }
         
-        // flush storage to ensure durability
-        if(!storage->flushAll()) {
+        
+        if(!storage->flushAll())
+        {
             logError("failed to flush storage");
             return false;
         }
-        
         releaseLocks(txnId);
-        
         txn.state=TransactionState::COMMITTED;
         activeTxns.erase(it);
-        
         log("committed transaction " + std::to_string(txnId));
         return true;
     }
-    
     bool TransactionManager::abortTransaction(TransactionId txnId)
     {
         std::lock_guard<std::mutex> lock(txnMutex);
         
         auto it=activeTxns.find(txnId);
-        if(it == activeTxns.end()) {
+        if(it == activeTxns.end())
+        {
             logError("transaction " + std::to_string(txnId) + " not found");
             return false;
         }
-        
         Transaction& txn=it->second;
-        if(txn.state != TransactionState::ACTIVE) {
+        if(txn.state != TransactionState::ACTIVE)
+        {
             logError("transaction " + std::to_string(txnId) + " not active");
             return false;
         }
-        
-        // log abort
-        if(!wal->logAbortTxn(txnId)) {
+        if(!wal->logAbortTxn(txnId))
+        {
             logError("failed to log transaction abort");
             return false;
         }
-        
-        // release all locks
         releaseLocks(txnId);
-        
         txn.state=TransactionState::ABORTED;
         activeTxns.erase(it);
         
         log("aborted transaction " + std::to_string(txnId));
         return true;
     }
-    
     bool TransactionManager::putRecord(TransactionId txnId, const std::string& key, const std::string& value)
     {
         {
@@ -113,24 +115,21 @@ namespace stonedb
             }
         }
         
-        // acquire exclusive lock (without holding txnMutex)
-        if(!acquireLocks(txnId, key, true)) {
+        if(!acquireLocks(txnId, key, true))
+        {
             logError("failed to acquire lock for " + key);
             return false;
         }
-        
-        // log operation
-        if(!wal->logPutRecord(txnId, key, value)) {
+        if(!wal->logPutRecord(txnId, key, value))
+        {
             logError("failed to log put operation");
             return false;
         }
-        
-        // perform operation
-        if(!storage->putRecord(key, value)) {
+        if(!storage->putRecord(key, value))
+        {
             logError("failed to put record");
             return false;
         }
-        
         {
             std::lock_guard<std::mutex> lock(txnMutex);
             auto it=activeTxns.find(txnId);
@@ -138,38 +137,37 @@ namespace stonedb
                 it->second.writeSet.insert(key);
             }
         }
-        
         log("txn " + std::to_string(txnId) + " put " + key + " = " + value);
         return true;
     }
-    
     bool TransactionManager::getRecord(TransactionId txnId, const std::string& key, std::string& value)
     {
         {
             std::lock_guard<std::mutex> lock(txnMutex);
             
             auto it=activeTxns.find(txnId);
-            if(it == activeTxns.end()) {
+            if(it == activeTxns.end())
+            {
                 logError("transaction " + std::to_string(txnId) + " not found");
                 return false;
             }
-            
             Transaction& txn=it->second;
-            if(txn.state != TransactionState::ACTIVE) {
+            if(txn.state != TransactionState::ACTIVE)
+            {
                 logError("transaction " + std::to_string(txnId) + " not active");
                 return false;
             }
         }
-        
         // acquire shared lock (without holding txnMutex)
-        if(!acquireLocks(txnId, key, false)) {
+        if(!acquireLocks(txnId, key, false))
+        {
             logError("failed to acquire lock for " + key);
             return false;
         }
         
-        // perform operation
+
         bool found=storage->getRecord(key, value);
-        if(found) {
+        if(found){
             {
                 std::lock_guard<std::mutex> lock(txnMutex);
                 auto it=activeTxns.find(txnId);
@@ -178,7 +176,9 @@ namespace stonedb
                 }
             }
             log("txn " + std::to_string(txnId) + " get " + key + " = " + value);
-        } else {
+        }
+        else
+        {
             log("txn " + std::to_string(txnId) + " get " + key + " (not found)");
         }
         
@@ -187,43 +187,57 @@ namespace stonedb
     
     bool TransactionManager::deleteRecord(TransactionId txnId, const std::string& key)
     {
-        std::lock_guard<std::mutex> lock(txnMutex);
-        
-        auto it=activeTxns.find(txnId);
-        if(it == activeTxns.end()) {
-            logError("transaction " + std::to_string(txnId) + " not found");
-            return false;
+        {
+            std::lock_guard<std::mutex> lock(txnMutex);
+            
+            auto it=activeTxns.find(txnId);
+            if(it == activeTxns.end())
+            {
+                logError("transaction " + std::to_string(txnId) + " not found");
+                return false;
+            }
+            
+            Transaction& txn=it->second;
+            if(txn.state != TransactionState::ACTIVE)
+            {
+                logError("transaction " + std::to_string(txnId) + " not active");
+                return false;
+            }
         }
         
-        Transaction& txn=it->second;
-        if(txn.state != TransactionState::ACTIVE) {
-            logError("transaction " + std::to_string(txnId) + " not active");
-            return false;
-        }
-        
-        // acquire exclusive lock
-        if(!acquireLocks(txnId, key, true)) {
+        //fix bug #10: release txnMutex before acquiring locks to avoid deadlock
+        if(!acquireLocks(txnId, key, true))
+        {
             logError("failed to acquire lock for " + key);
             return false;
         }
         
-        // log operation
-        if(!wal->logDeleteRecord(txnId, key)) {
-            logError("failed to log delete operation");
-            return false;
+        {
+            std::lock_guard<std::mutex> lock(txnMutex);
+            auto it=activeTxns.find(txnId);
+            if(it == activeTxns.end() || it->second.state != TransactionState::ACTIVE)
+            {
+                releaseLocks(txnId);
+                return false;
+            }
+            
+            if(!wal->logDeleteRecord(txnId, key))
+            {
+                logError("failed to log delete operation");
+                releaseLocks(txnId);
+                return false;
+            }
+            if(!storage->deleteRecord(key))
+            {
+                logError("failed to delete record");
+                releaseLocks(txnId);
+                return false;
+            }
+            it->second.writeSet.insert(key);
+            log("txn " + std::to_string(txnId) + " delete " + key);
+            return true;
         }
-        
-        // perform operation
-        if(!storage->deleteRecord(key)) {
-            logError("failed to delete record");
-            return false;
-        }
-        
-        txn.writeSet.insert(key);
-        log("txn " + std::to_string(txnId) + " delete " + key);
-        return true;
     }
-    
     bool TransactionManager::acquireLocks(TransactionId txnId, const std::string& key, bool isWrite)
     {
         LockType lockType=isWrite ? LockType::EXCLUSIVE : LockType::SHARED;
@@ -234,7 +248,6 @@ namespace stonedb
     {
         lockMgr->releaseAllLocks(txnId);
     }
-    
     void TransactionManager::printTransactionStatus()
     {
         std::lock_guard<std::mutex> lock(txnMutex);
