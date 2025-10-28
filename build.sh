@@ -19,5 +19,5 @@ make -j$(nproc)
 
 echo ""
 echo "Build complete!"
-echo "Run './demo.sh' to see the demo"
 echo "Run './build/stone' to start the database CLI"
+echo "Run './build/stone --help' to see available commands"

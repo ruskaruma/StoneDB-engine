@@ -3,9 +3,12 @@
 #include<fstream>
 #include<vector>
 #include<unordered_set>
+#include<memory>
 
 namespace stonedb
 {
+    class StorageManager;
+    
     class WALManager
     {
     private:
@@ -40,5 +43,7 @@ namespace stonedb
         bool logDeleteRecord(TransactionId txnId, const std::string& key);
         std::vector<LogEntry> replayLog();
         bool flush();
+        bool checkpoint(std::shared_ptr<StorageManager> storage);
+        bool truncateLog();
     };
 }

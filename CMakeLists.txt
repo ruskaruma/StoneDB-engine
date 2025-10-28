@@ -14,6 +14,8 @@ set(SOURCES
     src/wal.cpp
     src/lockmgr.cpp
     src/transaction.cpp
+    src/error_code.cpp
+    src/statistics.cpp
 )
 
 # create library
