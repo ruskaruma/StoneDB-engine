@@ -65,9 +65,10 @@ namespace stonedb
         //discover existing pages from file size
         dbFile.seekg(0, std::ios::end);
         std::streampos fileSize=dbFile.tellg();
-        if(fileSize > HEADER_SIZE)
+        std::streamoff fileSizeBytes=static_cast<std::streamoff>(fileSize);
+        if(fileSizeBytes > static_cast<std::streamoff>(HEADER_SIZE))
         {
-            PageId maxPageId=((fileSize - HEADER_SIZE) / PAGE_SIZE);
+            PageId maxPageId=static_cast<PageId>((fileSizeBytes - static_cast<std::streamoff>(HEADER_SIZE)) / static_cast<std::streamoff>(PAGE_SIZE));
             nextPageId=maxPageId + 1;
             
             //rebuild keyToPage mapping from existing pages
@@ -537,19 +538,21 @@ namespace stonedb
         
         //ensure file is large enough - check for overflow
         size_t pageSizeBytes=static_cast<size_t>(newPageId) * PAGE_SIZE;
-        if(pageSizeBytes > std::numeric_limits<std::streampos>::max() - HEADER_SIZE - PAGE_SIZE)
+        std::streamoff maxFileSize=std::numeric_limits<std::streamoff>::max();
+        std::streamoff totalSize=static_cast<std::streamoff>(HEADER_SIZE) + static_cast<std::streamoff>(pageSizeBytes) + static_cast<std::streamoff>(PAGE_SIZE);
+        if(static_cast<std::streamoff>(pageSizeBytes) > maxFileSize - static_cast<std::streamoff>(HEADER_SIZE) - static_cast<std::streamoff>(PAGE_SIZE))
         {
             logError("file size calculation overflow");
             allocatedPages.erase(newPageId);
             return 0;
         }
         
-        std::streampos requiredSize=HEADER_SIZE + pageSizeBytes + PAGE_SIZE;
+        std::streampos requiredSize=totalSize;
         dbFile.seekp(0, std::ios::end);
         std::streampos currentSize=dbFile.tellp();
         if(currentSize < requiredSize)
         {
-            std::streampos targetPos=requiredSize - 1;
+            std::streampos targetPos=static_cast<std::streampos>(totalSize - 1);
             dbFile.seekp(targetPos);
             dbFile.write("\0", 1);
             dbFile.flush();
