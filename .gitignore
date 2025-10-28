@@ -35,8 +35,21 @@
 /libstonedb.a
 
 #Database/test data
-test_db.sdb
+*.sdb
 *.wal
+*.json
+backup
+restore
+restored_*
+test_*
+perf_*
+verify_*
+final_*
+comprehensive_*
+showcase_*
+demo_*
+stats_*
+users_*
 
 #  OS/editor 
 .DS_Store
