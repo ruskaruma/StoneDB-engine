@@ -2,7 +2,9 @@
 #include"common.hpp"
 #include<fstream>
 #include<unordered_map>
+#include<unordered_set>
 #include<mutex>
+#include<vector>
 
 namespace stonedb
 {
@@ -16,6 +18,15 @@ namespace stonedb
         PageId nextPageId;
         bool dbOpen;
         
+        //multi-page support
+        std::unordered_map<std::string, PageId> keyToPage;
+        std::vector<PageId> freePages;
+        std::unordered_set<PageId> allocatedPages;
+        
+        //fix bug #17: page cache size limit to prevent unbounded growth
+        static constexpr size_t MAX_CACHE_SIZE=1000;
+        void evictLRUPage();
+        
         static constexpr size_t HEADER_SIZE=64;
         static constexpr size_t RECORD_HEADER_SIZE=8;
         
@@ -23,6 +34,8 @@ namespace stonedb
         bool readPageFromDisk(PageId pageId, std::vector<uint8_t>& data);
         PageId allocateNewPage();
         void deallocatePage(PageId pageId);
+        bool findFreeSpaceInPage(PageId pageId, const std::string& key, const std::string& value, size_t requiredSize);
+        std::shared_ptr<Page> getPageUnlocked(PageId pageId);
         
     public:
         StorageManager();
