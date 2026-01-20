@@ -700,7 +700,7 @@ namespace stonedb
             memcpy(&valueLen, page->data.data() + offset + 2, 2);
             
             if(keyLen == 0)
-            {s
+            {
                 size_t slotSize=valueLen > 0 && valueLen < MAX_VALUE_SIZE ? valueLen : 0;
                 size_t slotTotalSize=4 + slotSize;
                 if(slotTotalSize >= requiredSize)
@@ -715,8 +715,6 @@ namespace stonedb
                 page->isDirty=true;
                 return true;
                 }
-                
-                //slot too small, skip it
                 if(slotSize > 0 && slotSize < MAX_VALUE_SIZE && offset + 4 + slotSize < PAGE_SIZE)
                 {
                     size_t newOffset=offset + 4 + slotSize;
@@ -726,7 +724,6 @@ namespace stonedb
                 }
                 else
                 {
-                    //invalid slot, try to find next valid record by looking for non-zero keyLen
                     size_t searchOffset=offset + 4;
                     bool foundNext=false;
                     while(searchOffset < PAGE_SIZE - 4)
@@ -740,9 +737,9 @@ namespace stonedb
                             break;
                         }
                         searchOffset += 4;
-                        if(searchOffset > offset + 100) break; //safety limit
+                        if(searchOffset > offset + 100) break;
                     }
-                    if(!foundNext) break; //no more records
+                    if(!foundNext) break;
                     continue;
                 }
             }
@@ -757,19 +754,13 @@ namespace stonedb
             
             offset += 4 + keyLen + valueLen;
         }
-        
-        //if we reached here, check if we can append at end of valid records
-        //only append if offset is past all existing records (not in middle of page)
         if(offset < PAGE_SIZE - RECORD_HEADER_SIZE && offset + requiredSize <= PAGE_SIZE)
         {
-            //double-check that this is truly the end (next 4 bytes should be zeros or invalid)
             if(offset + 4 <= PAGE_SIZE)
             {
                 uint16_t nextKeyLen, nextValueLen;
                 memcpy(&nextKeyLen, page->data.data() + offset, 2);
                 memcpy(&nextValueLen, page->data.data() + offset + 2, 2);
-                
-                //if next slot is empty/deleted, we can append here
                 if(nextKeyLen == 0 && nextValueLen == 0)
                 {
                     uint16_t keyLen=key.size();
@@ -786,7 +777,6 @@ namespace stonedb
         
         return false;
     }
-    
     std::vector<Record> StorageManager::scanRecords()
     {
         std::vector<Record> records;
@@ -803,8 +793,6 @@ namespace stonedb
             uint16_t keyLen, valueLen;
             memcpy(&keyLen, page->data.data() + offset, 2);
             memcpy(&valueLen, page->data.data() + offset + 2, 2);
-                
-                //skip deleted records (keyLen == 0)
                 if(keyLen == 0)
                 {
                     if(valueLen > 0 && valueLen < MAX_VALUE_SIZE && offset + 4 + valueLen < PAGE_SIZE)
