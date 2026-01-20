@@ -75,8 +75,6 @@ int main(int argc, char* argv[])
             return 1;
         }
     }
-    
-    //derive WAL path from database path
     std::string walPath=dbPath;
     size_t lastDot=walPath.find_last_of('.');
     if(lastDot != std::string::npos)
@@ -154,7 +152,6 @@ int main(int argc, char* argv[])
         }
         else if(cmd == "stats")
         {
-            //GitHub Issue #9: statistics command
             std::cout << "=== Database Statistics ===" << std::endl;
             std::cout << "Transactions: " << stats.getTransactionCount() << std::endl;
             std::cout << "PUT operations: " << stats.getPutOps() << std::endl;
@@ -165,28 +162,21 @@ int main(int argc, char* argv[])
             std::cout << "Cache hit ratio: " << std::fixed << std::setprecision(2) << stats.getCacheHitRatio() << "%" << std::endl;
             std::cout << "Lock waits: " << stats.getLockWaits() << std::endl;
             std::cout << "Deadlocks detected: " << stats.getDeadlocks() << std::endl;
-        } else if(cmd == "put") {
-            //fix bug #14: handle multi-word values with proper parsing
+        } else if(cmd == "put")
+        {
             std::string key;
             if(iss >> key)
             {
-                //get rest of line as value (handles spaces and quotes)
                 std::string value;
                 std::getline(iss, value);
-                
-                //trim leading whitespace
                 if(!value.empty() && value[0] == ' ')
                 {
                     value.erase(0, 1);
                 }
-                
-                //handle quoted values
                 if(!value.empty() && value.front() == '"' && value.back() == '"' && value.size() >= 2)
                 {
                     value=value.substr(1, value.size() - 2);
                 }
-                
-                //validate input (bug #19 partial fix)
                 if(key.empty())
                 {
                     std::cout << "ERROR: Key cannot be empty" << std::endl;
@@ -272,7 +262,6 @@ int main(int argc, char* argv[])
         }
         else if(cmd == "scan")
         {
-            //fix bug #15: add transaction isolation for scan
             auto txnId=txnMgr.beginTransaction();
             auto records=storage->scanRecords();
             txnMgr.commitTransaction(txnId);
@@ -310,27 +299,20 @@ int main(int argc, char* argv[])
                 {
                     outFile << "    {\n";
                     outFile << "      \"key\": \"" << records[i].key << "\",\n";
-                    //fix bug #12: escape all JSON special characters
                     std::string escapedValue=records[i].value;
                     size_t pos=0;
-                    
-                    //escape backslashes first
                     while((pos=escapedValue.find("\\", pos)) != std::string::npos)
                     {
                         escapedValue.replace(pos, 1, "\\\\");
                         pos += 2;
                     }
                     pos=0;
-                    
-                    //escape quotes
                     while((pos=escapedValue.find("\"", pos)) != std::string::npos)
                     {
                         escapedValue.replace(pos, 1, "\\\"");
                         pos += 2;
                     }
                     pos=0;
-                    
-                    //escape control characters
                     while((pos=escapedValue.find("\b", pos)) != std::string::npos)
                     {
                         escapedValue.replace(pos, 1, "\\b");
@@ -360,15 +342,13 @@ int main(int argc, char* argv[])
                         escapedValue.replace(pos, 1, "\\t");
                         pos += 2;
                     }
-                    
-                    //escape other control characters (0x00-0x1F)
                     pos=0;
                     while(pos < escapedValue.size())
                     {
                         unsigned char c=escapedValue[pos];
                         if(c < 0x20 && c != '\b' && c != '\t' && c != '\n' && c != '\f' && c != '\r')
                         {
-                            char hex[5];
+                            char hex[7];
                             snprintf(hex, sizeof(hex), "\\u%04x", c);
                             escapedValue.replace(pos, 1, hex);
                             pos += 6;
@@ -443,10 +423,8 @@ int main(int argc, char* argv[])
                     pos += 8;
                     while(pos < json.size() && (json[pos] == ' ' || json[pos] == '\"'))
                         pos++;
-                    size_t valueStart=pos;
+
                     std::string value;
-                    
-                    //parse value with proper escape handling
                     while(pos < json.size())
                     {
                         if(json[pos] == '\\' && pos+1 < json.size())
@@ -485,7 +463,6 @@ int main(int argc, char* argv[])
                         else if(json[pos] == '"')
                         {
                             pos++;
-                            //skip whitespace after closing quote
                             while(pos < json.size() && (json[pos] == ' ' || json[pos] == '\t' || json[pos] == '\n' || json[pos] == '\r'))
                                 pos++;
                             if(pos < json.size() && (json[pos] == ',' || json[pos] == '}' || json[pos] == ']'))
@@ -510,7 +487,6 @@ int main(int argc, char* argv[])
                         restoreCount++;
                     }
                 }
-                
                 if(txnMgr.commitTransaction(txnId))
                 {
                     std::cout << "Restore completed: " << restoreCount << " records restored" << std::endl;
