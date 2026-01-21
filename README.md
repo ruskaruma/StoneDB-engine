@@ -2,7 +2,8 @@
 
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
 ![C++](https://img.shields.io/badge/C++-17-orange.svg)
-I have built an ACID-compliant embedded database written in C++ as a personal side project to learn databases at their core.
+
+This is an ACID-compliant embedded database written in C++ as a personal side project to learn databases at their core.
 
 ## Features
 
